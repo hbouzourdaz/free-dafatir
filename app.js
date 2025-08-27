@@ -232,67 +232,6 @@
       const title = card.getAttribute('data-title') || 'معاينة';
       if (src) openViewer(title, src);
     }
-
-    // Force real download for links with [download]
-    const dlink = e.target.closest('a[download]');
-    if (dlink) {
-      // Prevent browser from opening the PDF
-      e.preventDefault();
-      const url = dlink.getAttribute('href');
-      if (!url) return;
-      const card = dlink.closest('article[data-src][data-title]');
-      // Prefer filename from href if present, else from data-title
-      const hrefName = (() => {
-        try {
-          const u = new URL(url, location.href);
-          return decodeURIComponent(u.pathname.split('/').pop() || 'file.pdf');
-        } catch {
-          // data URL or relative without base
-          const parts = url.split('/');
-          return decodeURIComponent(parts[parts.length - 1] || 'file.pdf');
-        }
-      })();
-      const titleName = (card && card.getAttribute('data-title')) ? (card.getAttribute('data-title') + '.pdf') : 'file.pdf';
-      const filename = hrefName.toLowerCase().endsWith('.pdf') ? hrefName : titleName;
-
-      // If running under file://, fetch will likely fail due to CORS/URL; fallback to navigation
-      if (location.protocol === 'file:') {
-        try {
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-        } catch {
-          window.location.href = url;
-        }
-        return;
-      }
-
-      // Fetch as blob and trigger download
-      fetch(encodeURI(url))
-        .then((res) => {
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.blob();
-        })
-        .then((blob) => {
-          const blobUrl = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = blobUrl;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(() => {
-            URL.revokeObjectURL(blobUrl);
-            a.remove();
-          }, 1000);
-        })
-        .catch(() => {
-          // Fallback: normal navigation to the file
-          window.location.href = url;
-        });
-    }
   });
 
   closeViewer && closeViewer.addEventListener('click', closeViewerFn);
