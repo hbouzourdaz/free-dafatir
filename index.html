@@ -11,6 +11,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PDF.js for in-page PDF rendering on mobile (no native viewer required) -->
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
     <script>
       tailwind.config = {
         theme: {
@@ -232,7 +234,10 @@
                 <span>جاري التحميل...</span>
               </div>
             </div>
-            <iframe id="pdfFrame" class="w-full h-full bg-slate-950" title="PDF Viewer" loading="lazy"></iframe>
+            <!-- Canvas-based viewer rendered by PDF.js -->
+            <div id="pdfCanvasContainer" class="w-full h-full overflow-auto bg-slate-950 p-3 space-y-4 hidden" aria-label="PDF Canvas Viewer"></div>
+            <!-- Fallback iframe if PDF.js fails for any reason -->
+            <iframe id="pdfFrame" class="w-full h-full bg-slate-950 hidden" title="PDF Viewer" loading="lazy"></iframe>
           </div>
           <noscript class="block p-3 text-slate-300">
             المتصفح لديك لا يدعم جافاسكريبت. لعرض الملف، افتحه مباشرة من الروابط في البطاقات أعلاه.

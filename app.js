@@ -1,6 +1,7 @@
 (function () {
   const viewerSection = document.getElementById('viewerSection');
   const pdfFrame = document.getElementById('pdfFrame');
+  const pdfCanvasContainer = document.getElementById('pdfCanvasContainer');
   const viewerTitle = document.getElementById('viewerTitle');
   const closeViewer = document.getElementById('closeViewer');
   const yearEl = document.getElementById('year');
@@ -16,6 +17,8 @@
   const noticeModal = document.getElementById('noticeModal');
   const noticeOk = document.getElementById('noticeOk');
   const noticeBackdrop = document.getElementById('noticeBackdrop');
+  // PDF.js state
+  let currentPdfLoadingTask = null;
 
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
@@ -91,23 +94,102 @@
   if (noticeOk) noticeOk.addEventListener('click', hideNotice);
   if (noticeBackdrop) noticeBackdrop.addEventListener('click', hideNotice);
 
+  // Try configure PDF.js worker if available
+  try {
+    if (window.pdfjsLib) {
+      // Use CDN worker matching the included version
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    }
+  } catch {}
+
+  async function renderPdfWithPdfJs(url) {
+    if (!window.pdfjsLib || !pdfCanvasContainer) throw new Error('PDF.js unavailable');
+
+    // Clear previous content
+    pdfCanvasContainer.innerHTML = '';
+    pdfCanvasContainer.classList.remove('hidden');
+    pdfFrame && pdfFrame.classList.add('hidden');
+
+    // Start loading
+    const encoded = encodeURI(url);
+    const loadingTask = window.pdfjsLib.getDocument({ url: encoded });
+    currentPdfLoadingTask = loadingTask;
+    const pdfDoc = await loadingTask.promise;
+
+    // Render pages sequentially
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      // If a new task started, stop rendering this one
+      if (currentPdfLoadingTask !== loadingTask) return;
+      const page = await pdfDoc.getPage(pageNum);
+
+      // Fit to container width
+      const containerWidth = Math.max(320, pdfCanvasContainer.clientWidth || 800);
+      const initialViewport = page.getViewport({ scale: 1 });
+      const scale = (containerWidth - 24) / initialViewport.width; // account for padding
+      const viewport = page.getViewport({ scale: Math.max(0.8, scale) });
+
+      const canvas = document.createElement('canvas');
+      canvas.dir = 'rtl';
+      canvas.style.width = viewport.width + 'px';
+      canvas.style.height = viewport.height + 'px';
+      canvas.className = 'mx-auto block rounded-lg bg-slate-900 shadow border border-slate-800';
+      const context = canvas.getContext('2d');
+
+      // Handle HiDPI displays
+      const outputScale = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(viewport.width * outputScale);
+      canvas.height = Math.floor(viewport.height * outputScale);
+      context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+
+      pdfCanvasContainer.appendChild(canvas);
+
+      await page.render({ canvasContext: context, viewport }).promise;
+    }
+  }
+
   function openViewer(title, src) {
     if (!viewerSection || !pdfFrame) return;
     viewerTitle.textContent = title || 'معاينة';
     // Use encodeURI to safely handle spaces and non-latin characters
     if (viewerLoader) viewerLoader.classList.remove('hidden');
-    pdfFrame.src = encodeURI(src);
-    viewerSection.classList.remove('hidden');
-    // focus for accessibility
-    closeViewer && closeViewer.focus();
-    // smooth scroll to viewer
-    try { viewerSection.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
-
-    // Hide other sections to focus on PDF only
-    siteHeader && siteHeader.classList.add('hidden');
-    roleSection && roleSection.classList.add('hidden');
-    cardsGrid && cardsGrid.classList.add('hidden');
-    siteFooter && siteFooter.classList.add('hidden');
+    // Prefer PDF.js rendering when available and not on file://
+    const isFileProtocol = location.protocol === 'file:';
+    if (!isFileProtocol && window.pdfjsLib && pdfCanvasContainer) {
+      renderPdfWithPdfJs(src)
+        .then(() => {
+          if (viewerLoader) viewerLoader.classList.add('hidden');
+        })
+        .catch(() => {
+          // Fallback to iframe on failure
+          if (pdfCanvasContainer) pdfCanvasContainer.classList.add('hidden');
+          pdfFrame.classList.remove('hidden');
+          pdfFrame.src = encodeURI(src);
+        })
+        .finally(() => {
+          viewerSection.classList.remove('hidden');
+          // focus for accessibility
+          closeViewer && closeViewer.focus();
+          try { viewerSection.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
+          // Hide other sections to focus on PDF only
+          siteHeader && siteHeader.classList.add('hidden');
+          roleSection && roleSection.classList.add('hidden');
+          cardsGrid && cardsGrid.classList.add('hidden');
+          siteFooter && siteFooter.classList.add('hidden');
+        });
+    } else {
+      // No PDF.js available -> iframe fallback
+      pdfFrame.classList.remove('hidden');
+      pdfFrame.src = encodeURI(src);
+      viewerSection.classList.remove('hidden');
+      // focus for accessibility
+      closeViewer && closeViewer.focus();
+      try { viewerSection.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
+      // Hide other sections to focus on PDF only
+      siteHeader && siteHeader.classList.add('hidden');
+      roleSection && roleSection.classList.add('hidden');
+      cardsGrid && cardsGrid.classList.add('hidden');
+      siteFooter && siteFooter.classList.add('hidden');
+    }
   }
 
   function closeViewerFn() {
@@ -115,6 +197,14 @@
     viewerSection.classList.add('hidden');
     // Unload PDF
     pdfFrame.src = 'about:blank';
+    pdfFrame.classList.add('hidden');
+    if (pdfCanvasContainer) {
+      // Cancel any ongoing PDF.js task and clear canvases
+      try { if (currentPdfLoadingTask && currentPdfLoadingTask.destroy) currentPdfLoadingTask.destroy(); } catch {}
+      currentPdfLoadingTask = null;
+      pdfCanvasContainer.innerHTML = '';
+      pdfCanvasContainer.classList.add('hidden');
+    }
     if (viewerLoader) viewerLoader.classList.remove('hidden');
 
     // Restore sections
